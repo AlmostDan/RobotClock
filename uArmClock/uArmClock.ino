@@ -1,9 +1,5 @@
 /**
 Created by Alex Thiel
-This sketch is a study in writing letters on a white board with a uArm.
-
-LOCATION OF PEICES
-
 
 LOCATION BLOCKS IN ARRAY
     0
@@ -13,41 +9,6 @@ LOCATION BLOCKS IN ARRAY
 4|    5|  
    --- 
     6
-    // BACKUP OF CLOCK VALUES 9-19-2015
-int clock[2][7][4] = {{{193, -70, -28, -77},  //  CLOCK 1
- {155, -64, -41,   27},
- {120, -72, -20,    7},
- { 90, -60, -35,  -71},
- { 72, -61, -53,   40},    
- { 29, -55, -22,    8},      
- {  0, -49, -47,  -54}
-},                      //  CLOCK 2
-{{192, -76,  -2,  70},
- {125, -65, -10,  -8},
- {156, -68,  11, -26},
- { 90, -60,   6,  63},
- { 33, -51,  -7,  -9},
- {  0, -49,  18,  57},
- { 72, -60,  25, -37}}
- };  
- 
- FOR DEBUGGING: TYPE INTO THE CONSOLE TO GET TO A CERTAIN LOCATION
-CLOCK 1
- s:193h:-70r:-28w:-77 
- s:155h:-65r:-41w:27
- s:125h:-68r:-19w:7
- s:90h:-60r:-35w:-71
- s:72h:-61r:-53w:40
- s:29h:-55r:-22w:8
- s:0h:-49r:-47w:-54
-CLOCK 2
- s:192h:-76r:-2w:70	
- s:125h:-65r:-10w:-8	
- s:156h:-68r:11w:-26	
- s:85h:-62r:5w:63	
- s:33h:-51r:-7w:-9	
- s:0h:-49r:18w:57
- s:72h:-60r:25w:-37
 **/
 
 #include <UF_uArm_Metal_new.h>
@@ -108,7 +69,7 @@ void setup(){
   uarm.init();           // initialize the uArm position
   uarm.setServoSpeed(SERVO_R,   255);  // 0=full speed, 1-255 slower to faster
   uarm.setServoSpeed(SERVO_L,   255);  // 0=full speed, 1-255 slower to faster
-  uarm.setServoSpeed(SERVO_ROT, 255);   // 0=full speed, 1-255 slower to faster
+  uarm.setServoSpeed(SERVO_ROT, 255);  // 0=full speed, 1-255 slower to faster
   
    
   Serial.println(F("Beginning uArmWrite"));
