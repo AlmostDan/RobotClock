@@ -19,11 +19,11 @@ LOCATION BLOCKS IN ARRAY
 UF_uArm uarm;               //  initialize the uArm library 
 
 double height = 0, stretch = 0, rotation = 0, wrist = 0;
-int time[2] = {1,7};       //  Holds the first two digits of the current time
+int time[2] = {1,7};        //  Holds the first two digits of the current time
 long millisSinceUpdate = 0;
-boolean runClock = false;  //  If true, then the refreshClock() function will run.
+boolean runClock = false;   //  If true, then the refreshClock() function will run.
 
-//  Location of where to pickup the papers
+//  Location of the paper bank
 int pickup[4] = {15, -53, 54, -69};   //{Stretch, Height, Rotation, wrist}  s:h:r:w:
  
 //  Location of every paper in the clock {rotation, stretch, height}
@@ -61,15 +61,14 @@ const boolean numbers[10][7] =  {{  true,  true,  true, false,  true,  true,  tr
                                  {  true,  true,  true,  true, false,  true, false}};  //  #9                               
                                
 void setup(){
-  Wire.begin();          // Join i2c bus (address optional for master)
+  Wire.begin();                        //  Join i2c bus (address optional for master)
   
-  Serial.begin(9600);    // Start serial port at 9600 bps
-  Serial.setTimeout(10); //  Super important. Makes Serial.parseInt() not wait a long time after an integer has ended.
+  Serial.begin(9600);                  //  Set up serial
   
-  uarm.init();           // initialize the uArm position
-  uarm.setServoSpeed(SERVO_R,   255);  // 0=full speed, 1-255 slower to faster
-  uarm.setServoSpeed(SERVO_L,   255);  // 0=full speed, 1-255 slower to faster
-  uarm.setServoSpeed(SERVO_ROT, 255);  // 0=full speed, 1-255 slower to faster
+  uarm.init();                         //  initialize the uArm position
+  uarm.setServoSpeed(SERVO_R,   255);  //  0=full speed, 1-255 slower to faster
+  uarm.setServoSpeed(SERVO_L,   255);  //  0=full speed, 1-255 slower to faster
+  uarm.setServoSpeed(SERVO_ROT, 255);  //  0=full speed, 1-255 slower to faster
   
    
   Serial.println(F("Beginning uArmWrite"));
@@ -85,7 +84,14 @@ void loop(){
   while(Serial.available() > 0){  //  USE SERIAL TO SEND A STRING OF TWO NUMBERS, WHICH SETS THE CLOCK TO THE CURRENT TIME. 
     String currentTime = Serial.readString();
 
-    if(currentTime.length() == 2){  //  Make sure it's a valid string
+    if(currentTime.equals("goto bank")){  //  If the banks location is being requested, move there
+      moveTo(pickup[0],    height, pickup[2], pickup[3]);  //  Go above location
+      delay(500);
+      moveTo(  stretch, pickup[1],  rotation,     wrist);  //  Move down onto location
+      break;  //  Quit now, so that the next if statement is not evaluated.
+    }
+    
+    if(currentTime.length() == 2){  //  Make sure it's a valid string of two numbers. If it is, start the clock process.
       time[0] = currentTime.substring(0,1).toInt();
       time[1] = currentTime.substring(1,2).toInt();
       millisSinceUpdate = millis();
@@ -304,12 +310,10 @@ void placePaper(int location[]){
 
 //  OTHER
 void moveTo(int s, int h, int r, int w){  //  Moves robot to a position, and records the variables. 
-  height = h; 
-  //uarm.setPosition(stretch, height, rotation, wrist);
-  //delay(250);        //By having the move split in two, theres little chance that the robot will knock anything over
-  stretch = s;
+  height =   h; 
+  stretch =  s;
   rotation = r;
-  wrist = w;
+  wrist =    w;
   uarm.setPosition(stretch, height, rotation, wrist);
 }
 
