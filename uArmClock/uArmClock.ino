@@ -1,7 +1,13 @@
 /**
-Created by Alex Thiel
 
-LOCATION BLOCKS IN ARRAY
+uArm Pro version of paper clock written by Dominik Franek
+
+Based on uArm Metal by Alex Thiel
+
+See Alexes original instructions and uArm Metal code links at 
+https://forum.ufactory.cc/t/tutorial-for-beginners-and-intermediate-make-your-own-uarm-clockbot/126
+
+DIGIT BLOCKS IN ARRAY, human view, top(0) is towards the arm base
     0
    ---   
 1|    2| 
@@ -11,38 +17,107 @@ LOCATION BLOCKS IN ARRAY
     6
 **/
 
-#include <UF_uArm_Metal_new.h>
-#include <VarSpeedServo.h>
-#include <EEPROM.h>
-#include <Wire.h>
- 
-UF_uArm uarm;               //  initialize the uArm library 
+#define START_TIME 7 // current time minute
 
-double height = 0, stretch = 0, rotation = 0, wrist = 0;
+// To be used with serial monitor
+#define DEBUG_PRINT 0
+
+#define SPEED 5000 //mm/min
+
+#define ZERO_LEVEL 5 // zero Z = height for the arm
+
+
+// Dimensions of the block the digits are made of.
+#define BLOCK_WIDTH 2.5
+#define BLOCK_LENGTH 7.5
+#define BLOCK_GAP 0.5 // 0 - blocks will touch by corners. Not recommended. Higher value is a gap in both X and Y coordinates.
+#define DIGIT_WIDTH (BLOCK_LENGTH + 2 * BLOCK_WIDTH + 2 * BLOCK_GAP)
+#define DIGIT_HEIGHT (2 * BLOCK_LENGTH + 3 * BLOCK_WIDTH + 4 * BLOCK_GAP)
+
+// Positions of the digits bottom left corner, viewed from the arm base.
+#define DIGIT_0_X 100 
+#define DIGIT_0_Y -100 
+#define DIGIT_1_X 100 
+#define DIGIT_1_Y 100 - BLOCK_WIDTH
+
+float height = 0, stretch = 0, rotation = 0, wrist = 0;
 int time[2] = {1,7};        //  Holds the first two digits of the current time
 long millisSinceUpdate = 0;
 boolean runClock = false;   //  If true, then the refreshClock() function will run.
 
 //  Location of the paper bank
-int pickup[4] = {15, -53, 54, -69};   //{Stretch, Height, Rotation, wrist}  s:h:r:w:
+//int pickup[4] = {15, -53, 54, -69};   //{Stretch, Height, Rotation, wrist}  s:h:r:w:
+int pickup[4] = {75, -100, 0, -45};   //{X, Y, wrist}  s:h:r:w:
+int clock[2][7][4];
  
-//  Location of every paper in the clock {rotation, stretch, height}
-int clock[2][7][4] = {{{  0, -49, -47,  -54}, //  CLOCK 1
-                       { 29, -55, -22,    8},  
-                       { 72, -61, -54,   40}, 
-                       { 90, -60, -35,  -71},
-                       {120, -72, -20,    7},
-                       {155, -64, -42,   27},
-                       {193, -70, -28,  -77}
-                      },                      //  CLOCK 2
-                      {{  0, -49,  18,  57},
-                       { 72, -60,  25, -37},
-                       { 33, -51,  -7,  -8},
-                       { 85, -62,   5,  63},
-                       {156, -68,  11, -26},
-                       {125, -65, -10,  -7},
-                       {192, -76,  -2,  70}}
-                     };
+// Calculates wrist angle based on tile position and whether it is horizontal or vertical.
+float posToWrist(float x, float y, bool horizontal) 
+{
+  float angle = atan2(y, x) * 180 / 3.14159265;
+  if (horizontal)
+    angle += y < 0 ? 90 : -90; 
+  return angle;
+}
+
+// Creates basic coordinates with (0,0) at the bottom left corner of it when viewed from the robot base, top right when looking at the digit, top right of the bar no. 0
+void buildDigit(int index) 
+{
+  // shortcuts
+  float w = BLOCK_WIDTH;
+  float w2 = BLOCK_WIDTH / 2;
+  float l = BLOCK_LENGTH;
+  float l2 = BLOCK_LENGTH / 2;
+  float g = BLOCK_GAP;
+  float x,y;
+
+  // {X, Y, wrist}, Z is always ZERO_LEVEL, wrist will be calculated after transposition.
+  clock[index][0][0] = w + g + l2;  // horizontal bar closest to the arm base. l2, w2 is to get bar center coords. X
+  clock[index][0][1] = w2; // Y
+  clock[index][1][0] = w + 2*g + l + w2;
+  clock[index][1][1] = w + g + l2;
+  clock[index][2][0] = w2;
+  clock[index][2][1] = w + g + l2;
+  clock[index][3][0] = w + g + l2;
+  clock[index][3][1] = w + 2*g + l + w2;
+  clock[index][4][0] = w + 2*g + l + w2;
+  clock[index][4][1] = 2*w + 3*g + l + l2;
+  clock[index][5][0] = w2;
+  clock[index][5][1] = 2*w + 3*g + l + l2;
+  clock[index][6][0] = w + g + l2;
+  clock[index][6][1] = 2*w + 4*g + 2*l + w2;
+}
+
+// move digit
+void positionDigit(int index, float x, float y)
+{
+  for (int i = 0; i < 7; ++i)
+  {
+    clock[index][i][0] += x;
+    clock[index][i][1] += y;
+  }
+}
+
+// calculate wrist angles based on block positions and orientations
+void recalculateWrist(int index)
+{
+  clock[index][0][2] = posToWrist(clock[index][0][0], clock[index][0][1], true);
+  clock[index][1][2] = posToWrist(clock[index][1][0], clock[index][1][1], false);
+  clock[index][2][2] = posToWrist(clock[index][2][0], clock[index][2][1], false);
+  clock[index][3][2] = posToWrist(clock[index][3][0], clock[index][3][1], true);
+  clock[index][4][2] = posToWrist(clock[index][4][0], clock[index][4][1], false);
+  clock[index][5][2] = posToWrist(clock[index][5][0], clock[index][5][1], false);
+  clock[index][6][2] = posToWrist(clock[index][6][0], clock[index][6][1], true);
+}
+
+
+void prepareDigits() {
+  buildDigit(0);
+  positionDigit(0, DIGIT_0_X, DIGIT_0_Y);
+  recalculateWrist(0);
+  buildDigit(1);
+  positionDigit(1, DIGIT_1_X, DIGIT_1_Y );
+  recalculateWrist(1);
+}
 
 //  Keeps track of the locations of the papers currently on the board. 
 //  True means that there is a paper present at that location. The first array is for clock 0, and the second for clock 1
@@ -61,47 +136,24 @@ const boolean numbers[10][7] =  {{  true,  true,  true, false,  true,  true,  tr
                                  {  true,  true,  true,  true, false,  true, false}};  //  #9                               
                                
 void setup(){
-  Wire.begin();                        //  Join i2c bus (address optional for master)
+  Serial.begin(115200);                  //  Set up serial
   
-  Serial.begin(9600);                  //  Set up serial
-  
-  uarm.init();                         //  initialize the uArm position
-  uarm.setServoSpeed(SERVO_R,   255);  //  0=full speed, 1-255 slower to faster
-  uarm.setServoSpeed(SERVO_L,   255);  //  0=full speed, 1-255 slower to faster
-  uarm.setServoSpeed(SERVO_ROT, 255);  //  0=full speed, 1-255 slower to faster
-  
-   
-  Serial.println(F("Beginning uArmWrite"));
+  if (DEBUG_PRINT)
+    Serial.println(F("Beginning uArmWrite"));
+
+  if (START_TIME >= 0 && START_TIME < 60) {
+    time[0] = floor(START_TIME / 10);
+    time[1] = START_TIME % 10;
+    millisSinceUpdate = millis();
+    runClock = true;
+  }
+
+  Serial.println("M2400 S0"); // set mode to default
 }
 
 
 void loop(){
-  
-  uarm.calibration();
-  uarm.gripperDetach();  //  delay release valve, this function must be in the main loop
-
-  //  HANDLE SERIAL INPUT 
-  while(Serial.available() > 0){  //  USE SERIAL TO SEND A STRING OF TWO NUMBERS, WHICH SETS THE CLOCK TO THE CURRENT TIME. 
-    String currentTime = Serial.readString();
-
-    if(currentTime.equals("goto bank")){  //  If the banks location is being requested, move there
-      moveTo(pickup[0],    height, pickup[2], pickup[3]);  //  Go above location
-      delay(500);
-      moveTo(  stretch, pickup[1],  rotation,     wrist);  //  Move down onto location
-      break;  //  Quit now, so that the next if statement is not evaluated.
-    }
-    
-    if(currentTime.length() == 2){  //  Make sure it's a valid string of two numbers. If it is, start the clock process.
-      time[0] = currentTime.substring(0,1).toInt();
-      time[1] = currentTime.substring(1,2).toInt();
-      millisSinceUpdate = millis();
-      runClock = true;   
-    }else{
-      Serial.println(F("ERROR: Invalid time length. Number must be two digits"));
-    }
-  }
-  
-  //  Add or remove segments on the clock to get them as close as possible to the correct value of the time
+   //  Add or remove segments on the clock to get them as close as possible to the correct value of the time
   refreshClock();
 } 
 
@@ -126,8 +178,9 @@ void refreshClock(){
     if(time[0] >= 6){ time[0] = 0;}
     millisSinceUpdate = millis();  //  Reset the millis() counter
   }
-  
-  Serial.print("Building number: " + String(time[0]) + " " + String(time[1]));
+
+  if (DEBUG_PRINT)
+    Serial.print("Building number: " + String(time[0]) + " " + String(time[1]));
   
   if(buildNumber(time[0], 1)){
     //  Once the first digit is complete, it will move on to the next if statement, where it proceeds to work on the next digit.
@@ -135,7 +188,8 @@ void refreshClock(){
   else if(buildNumber(time[1], 0)){
     moveTo(100, 50, 0,0);
   }
-  Serial.print("\n");
+  if (DEBUG_PRINT)
+    Serial.print("\n");
 }
 
 boolean buildNumber(int num, int digit){
@@ -144,7 +198,8 @@ boolean buildNumber(int num, int digit){
   //  Pick a segment that needs to be Removed and place it, then exit the program
   for(int i = 0; i < 7; i++){  //  Check all segments
     if(!numbers[num][i] & currentSegments[digit][i]){  //  If there should NOT be a segment present, and there happens to be one, then take it away.
-      Serial.print("\t Removing Segment" + String(i) + " on digit " + String(digit)); 
+      if (DEBUG_PRINT)
+        Serial.print("\t Removing Segment" + String(i) + " on digit " + String(digit)); 
       pickupPaper(clock[digit][i]);
       placeStack();
       currentSegments[digit][i] = false;
@@ -155,7 +210,8 @@ boolean buildNumber(int num, int digit){
   //  Pick a segment that needs to be placed and place it, then exit the program
   for(int i = 0; i < 7; i++){  //  Check all segments
     if(numbers[num][i] & !currentSegments[digit][i]){  //  If there should be a segment present in this spot, and if there isn't already one, then place one.
-      Serial.print("\t Placing Segment " + String(i) + " on digit " + String(digit)); 
+      if (DEBUG_PRINT)
+        Serial.print("\t Placing Segment " + String(i) + " on digit " + String(digit)); 
       pickupPaperStack();
       placePaper(clock[digit][i]);
       currentSegments[digit][i] = true; 
@@ -182,7 +238,7 @@ void pickupPaperStack(){
   delay(500);
   moveTo( pickup[0],      pickup[1],      pickup[2], pickup[3]); //Finish moving down onto the paper
   delay(600);  
-  uarm.gripperCatch();
+  pumpOn();
   delay(1000);
   moveTo( pickup[0] + 4,  pickup[1] + 10, pickup[2], pickup[3]); //Move slowly so that you don't create suction and another paper flies out
   delay(500);
@@ -205,7 +261,7 @@ void pickupPaper(int location[]){
   moveTo( location[0],     location[1] - 5,  location[2], location[3]); //Finish moving down onto the paper
   delay(600);
 
-  uarm.gripperCatch();
+  pumpOn();
   delay(1000);
   moveTo(stretch + 4, height + 10, rotation, wrist); //Move slowly so that you don't create suction and another paper flies out
   delay(500);
@@ -233,7 +289,7 @@ void placeStack(){
   moveTo( pickup[0] + 4,  pickup[1] + 10, pickup[2], pickup[3]);
   delay(300);
   
-  uarm.gripperRelease();  //  Release, then keep pushing down to help "normalize" the stack
+  pumpOff();  //  Release, then keep pushing down to help "normalize" the stack
   delay(500);
 
   //  Start a "pushing" sequence, which helps push irregular drops back into place, and does nothing bad for successful drops
@@ -290,7 +346,7 @@ void placePaper(int location[]){
   delay(750);
   moveTo(stretch, height - 40, rotation, wrist);
   delay(500);
-  uarm.gripperRelease();
+  pumpOff();
   delay(600);
   
   //  Raise slowly so as to not disturb the papers new position, then return to home position
@@ -305,15 +361,34 @@ void placePaper(int location[]){
   //moveTo(100,50,0,0);
 }
 
+// ----- uArm interfaces
 
+// sucker
+void pumpOn(void) {
+  Serial.println("M2231 V1");
+}
 
+void pumpOff(void) {
+  Serial.println("M2231 V0");
+}
 
-//  OTHER
+//  movement
 void moveTo(int s, int h, int r, int w){  //  Moves robot to a position, and records the variables. 
-  height =   h; 
+  height =   h + ZERO_LEVEL; 
   stretch =  s;
   rotation = r;
   wrist =    w;
-  uarm.setPosition(stretch, height, rotation, wrist);
+  
+  Serial.print("G2201 S");
+  Serial.print(stretch);
+  Serial.print(" R");
+  Serial.print(rotation);
+  Serial.print(" H");
+  Serial.print(height);
+  Serial.print(" F");
+  Serial.println(SPEED);
+
+  Serial.print("G2202 N3 V");
+  Serial.println(wrist);
 }
 
